@@ -1,6 +1,6 @@
 {
-  "name": "my-mods",
-  "owner": { "name": "me" },
+  "name": "cc-cockpit",
+  "owner": { "name": "JunWang666" },
   "plugins": [
     { "name": "prompt-jump", "source": "./mods/prompt-jump", "description": "/prompts 列出本会话消息并跳转，/bottom 回到底部" },
     { "name": "quota-band", "source": "./mods/quota-band", "description": "输入框上方分割线 + 轮次/速度/花费/缓存/额度/上下文统计行" }
