@@ -1,0 +1,6 @@
+{
+  "name": "welcome",
+  "version": "0.1.0",
+  "description": "A welcome card above the prompt when a session starts: the project's git state, recent commits and its recent sessions to resume",
+  "types": "./types/index.d.ts"
+}
