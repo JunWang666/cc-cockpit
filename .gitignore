@@ -1,0 +1,4 @@
+# Written by Claude Code each time it loads a mod; regenerated, not edited.
+mods/*/.claude-plugin/types/
+mods/*/tsconfig.json
+node_modules/

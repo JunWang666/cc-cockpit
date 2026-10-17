@@ -1,0 +1,6 @@
+{
+  "name": "prompt-jump",
+  "version": "0.1.0",
+  "description": "/prompts lists the messages you sent in this session; press one to scroll the transcript to it",
+  "types": "./types/index.d.ts"
+}

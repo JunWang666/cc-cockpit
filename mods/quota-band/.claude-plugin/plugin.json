@@ -1,0 +1,6 @@
+{
+  "name": "quota-band",
+  "version": "0.1.0",
+  "description": "Band above the prompt showing your 5-hour and weekly usage limits with progress bars and reset countdowns",
+  "types": "./types/index.d.ts"
+}
