@@ -8,12 +8,22 @@ export type WelcomeGit = {
   commits: WelcomeCommit[]
 }
 
-export type WelcomeSession = { id: string; prompt: string; prompts: number; time: number }
+export type WelcomeSession = {
+  id: string
+  prompt: string
+  prompts: number
+  time: number
+  // the latest session only: its last recap and the files it edited
+  recap?: string
+  edited?: string[]
+}
 
-export type WelcomeInfo = { git: WelcomeGit | null; sessions: WelcomeSession[]; scannedAt: number }
+export type WelcomeDoc = { name: string; title: string; gist: string; lines: number; preview: string[] }
+
+export type WelcomeInfo = { git: WelcomeGit | null; docs: WelcomeDoc[]; sessions: WelcomeSession[]; scannedAt: number }
 
 declare module 'claude-code' {
   interface PluginState {
-    welcome: { info: WelcomeInfo | null; isShown: boolean }
+    welcome: { info: WelcomeInfo | null; isShown: boolean; openDoc: string | null }
   }
 }

@@ -5,7 +5,10 @@ const NOW = Date.parse('2026-10-17T10:00:00Z')
 
 const INFO = {
   git: { branch: 'main', changes: 2, ahead: 1, behind: 0, commits: [{ hash: 'abc1234', time: NOW - 3600_000, subject: 'Fix login' }] },
-  sessions: [{ id: 'sess-1', prompt: '修一下登录页', prompts: 4, time: NOW - 7200_000 }],
+  docs: [{ name: 'README.md', title: 'My App', gist: 'Does things', lines: 40, preview: ['# My App', 'Does things', '## Install'] }],
+  sessions: [
+    { id: 'sess-1', prompt: '修一下登录页', prompts: 4, time: NOW - 7200_000, recap: '登录页样式修好了，下一步加测试。', edited: ['/work/src/login.css', '/work/src/login.tsx'] },
+  ],
   scannedAt: NOW,
 }
 
@@ -28,10 +31,15 @@ test('shows the card at startup, resumes a session, hides on the first prompt', 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'welcome', surface, ...BAND } as never)
-    for (const text of ['/work', '最近提交', 'abc1234', 'below']) {
+    for (const text of ['/work', '最近提交', 'abc1234', '项目文档 · 点一下展开', '登录页样式修好了，下一步加测试。', 'below']) {
       expect([text, (await ui.find({ type: 'Text', text })) !== undefined]).toEqual([text, true])
     }
-    expect(await ui.findAll({ type: 'Button' })).toHaveLength(2)
+    expect(await ui.findAll({ type: 'Button' })).toHaveLength(3)
+    expect(await ui.find({ type: 'Text', text: /src\/login\.css、src\/login\.tsx/ })).toBeDefined()
+    await ui.press({ key: 'doc-README.md' })
+    expect(await ui.find({ type: 'Text', text: '## Install' })).toBeDefined()
+    await ui.press({ key: 'doc-README.md' })
+    expect(await ui.find({ type: 'Text', text: '## Install' })).toBeUndefined()
     await ui.unmount()
   }
 
