@@ -1,0 +1,33 @@
+{
+  "name": "auto-continue",
+  "version": "0.1.0",
+  "description": "When a turn stops on a used-up quota, wait for the window to reset and send a prompt to carry on, if the reset comes within the wait you allow",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabledByDefault": {
+      "type": "boolean",
+      "title": "Enabled by default",
+      "description": "Turn auto-continue on in every new session",
+      "default": false
+    },
+    "maxWaitHours": {
+      "type": "number",
+      "title": "Longest wait (hours)",
+      "description": "Carry on only when the quota resets within this many hours of running out",
+      "default": 24
+    },
+    "prompt": {
+      "type": "string",
+      "title": "Prompt sent on reset",
+      "description": "What is sent to carry the work on once the quota resets",
+      "default": "额度已刷新，请从中断的地方继续完成刚才的任务。"
+    },
+    "windows": {
+      "type": "string",
+      "title": "Which quota to wait for",
+      "description": "seven_day: the weekly quota only; any: the weekly or the 5-hour one",
+      "options": ["any", "seven_day"],
+      "default": "any"
+    }
+  }
+}

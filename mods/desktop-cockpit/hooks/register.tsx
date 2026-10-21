@@ -49,6 +49,10 @@ const CACHE_WARN_MIN = 20
 const CACHE_ALERT_MIN = 10
 const TICK_MS = 15_000
 
+// Narrower than these, the band's one line drops its quota bars, then its total cost and long labels.
+const DESK_FULL_COLUMNS = 120
+const DESK_MID_COLUMNS = 85
+
 const SESSIONS = 5
 const EDITED_SHOWN = 5
 const DOCS = ['README.md', 'AGENTS.md', 'CLAUDE.md']
@@ -388,41 +392,50 @@ export const register: Register = on => {
       e.props.isWorking || left === null ? CACHE : left <= CACHE_ALERT_MIN ? ALERT : left <= CACHE_WARN_MIN ? WARN : CACHE
     const cacheText = e.props.isWorking ? '…' : left === null ? '—' : left === 0 ? '已过期' : `${left}分钟`
 
+    // One line always: narrower bands drop the quota bars, then the total cost and the long labels;
+    // whatever still does not fit is clipped rather than wrapped.
+    const cols = e.props.bodyColumns
+    const isFull = cols >= DESK_FULL_COLUMNS
+    const isMid = cols >= DESK_MID_COLUMNS
+
     const row = (
-      <Box key="cockpit-row" flexDirection="row" columnGap={3} flexWrap="wrap" paddingX={1}>
-        <Box flexDirection="row" columnGap={1}>
-          <Text dimColor size="footnote">Turn</Text>
-          <Text bold tabular size="footnote">{String(s.turn)}</Text>
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          <Text color={SPEED} size="footnote">⚡</Text>
-          <Text bold tabular size="footnote">{s.speed === null ? '—' : `${s.speed} tok/s`}</Text>
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          <Text bold tabular color={MONEY} size="footnote">{s.turnCost === null ? '—' : usd(s.turnCost)}</Text>
-          <Text dimColor size="footnote">/</Text>
-          <Text bold tabular size="footnote">{usd(s.total)}</Text>
-        </Box>
-        <Box flexDirection="row" columnGap={1}>
-          <Text color={cacheColor} size="footnote">缓存</Text>
-          <Text bold tabular color={cacheColor} size="footnote">{cacheText}</Text>
-        </Box>
-        {list.map(w => (
-          <Box key={w.kind} flexDirection="row" columnGap={1} alignItems="center">
-            <Text dimColor size="footnote">{LABELS[w.kind] ?? w.kind}</Text>
-            <Svg source={bar(w.percentUsed, level(w.percentUsed), 48)} alt={`${Math.round(w.percentUsed)}%`} width={48} height={6} />
-            <Text bold tabular color={level(w.percentUsed)} size="footnote">{`${Math.round(w.percentUsed)}%`}</Text>
+      <Box key="cockpit-row" flexDirection="row" columnGap={2} flexWrap="nowrap" paddingX={1} alignItems="center">
+        <Box flexDirection="row" columnGap={isFull ? 3 : 2} flexWrap="nowrap" flexShrink={1} flexGrow={1} overflow="hidden">
+          <Box flexDirection="row" columnGap={1} flexShrink={0}>
+            <Text dimColor size="footnote">{isFull ? 'Turn' : '#'}</Text>
+            <Text bold tabular size="footnote">{String(s.turn)}</Text>
           </Box>
-        ))}
-        <Box flexDirection="row" columnGap={1} alignItems="center">
-          <Text dimColor size="footnote">上下文</Text>
-          <Svg source={bar(s.context, level(s.context), 48)} alt={`${Math.round(s.context)}%`} width={48} height={6} />
-          <Text bold tabular color={level(s.context)} size="footnote">{`${Math.round(s.context)}%`}</Text>
+          <Box flexDirection="row" columnGap={1} flexShrink={0}>
+            <Text color={SPEED} size="footnote">⚡</Text>
+            <Text bold tabular size="footnote">{s.speed === null ? '—' : isFull ? `${s.speed} tok/s` : `${s.speed}/s`}</Text>
+          </Box>
+          <Box flexDirection="row" columnGap={1} flexShrink={0}>
+            <Text bold tabular color={MONEY} size="footnote">{s.turnCost === null ? '—' : usd(s.turnCost)}</Text>
+            {isMid ? <Text dimColor size="footnote">/</Text> : null}
+            {isMid ? <Text bold tabular size="footnote">{usd(s.total)}</Text> : null}
+          </Box>
+          <Box flexDirection="row" columnGap={1} flexShrink={0}>
+            <Text color={cacheColor} size="footnote">{isMid ? '缓存' : '⧗'}</Text>
+            <Text bold tabular color={cacheColor} size="footnote">{isMid ? cacheText : cacheText.replace('分钟', 'm')}</Text>
+          </Box>
+          {list.map(w => (
+            <Box key={w.kind} flexDirection="row" columnGap={1} alignItems="center" flexShrink={0}>
+              <Text dimColor size="footnote">{LABELS[w.kind] ?? w.kind}</Text>
+              {isFull ? <Svg source={bar(w.percentUsed, level(w.percentUsed), 48)} alt={`${Math.round(w.percentUsed)}%`} width={48} height={6} /> : null}
+              <Text bold tabular color={level(w.percentUsed)} size="footnote">{`${Math.round(w.percentUsed)}%`}</Text>
+            </Box>
+          ))}
+          <Box flexDirection="row" columnGap={1} alignItems="center" flexShrink={0}>
+            <Text dimColor size="footnote">{isMid ? '上下文' : 'ctx'}</Text>
+            {isMid ? <Svg source={bar(s.context, level(s.context), 48)} alt={`${Math.round(s.context)}%`} width={48} height={6} /> : null}
+            <Text bold tabular color={level(s.context)} size="footnote">{`${Math.round(s.context)}%`}</Text>
+          </Box>
         </Box>
-        <Box flexGrow={1} />
-        <Button key="cockpit-open" plain onPress={() => openPane($)}>
-          <Text color={ACCENT} size="footnote">驾驶舱 ›</Text>
-        </Button>
+        <Box flexShrink={0}>
+          <Button key="cockpit-open" plain onPress={() => openPane($)}>
+            <Text color={ACCENT} size="footnote">驾驶舱 ›</Text>
+          </Button>
+        </Box>
       </Box>
     )
 

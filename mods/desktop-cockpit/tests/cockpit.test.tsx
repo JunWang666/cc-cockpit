@@ -72,6 +72,15 @@ test('the desktop band: welcome card and stats row', async ($, on) => {
   await ui.press({ key: 'welcome-close' })
   expect(await ui.find({ type: 'Text', text: '最近提交' })).toBeUndefined()
   await ui.unmount()
+
+  // narrow: still one line, with the total cost and long labels dropped
+  const narrow = await $.ui.mount({ plugin: 'desktop-cockpit', surface: 'desktop', ...BAND, props: { ...BAND.props, bodyColumns: 70 } } as never)
+  for (const text of ['#', 'ctx', '68%', '21%']) {
+    expect([text, (await narrow.find({ type: 'Text', text })) !== undefined]).toEqual([text, true])
+  }
+  expect(await narrow.find({ type: 'Text', text: '$5.64' })).toBeUndefined()
+  expect(await narrow.find({ type: 'Text', text: '上下文' })).toBeUndefined()
+  await narrow.unmount()
 })
 
 test('the terminal band is left to quota-band and welcome', async ($, on) => {

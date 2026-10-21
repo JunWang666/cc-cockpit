@@ -5,6 +5,11 @@
   },
   "plugins": [
     {
+      "name": "auto-continue",
+      "source": "./mods/auto-continue",
+      "description": "/auto-continue on [1d]：额度用完后，在允许的等待时间内刷新就自动发消息继续（终端和桌面通用）"
+    },
+    {
       "name": "desktop-cockpit",
       "source": "./mods/desktop-cockpit",
       "description": "桌面版：输入框上方统计行 + 欢迎卡片，/cockpit 面板看用量、项目状态和本会话消息"
