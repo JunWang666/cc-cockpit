@@ -83,3 +83,36 @@ test('the prompt and the wait come from the options', { options: { enabledByDefa
   await clock.advance(HOUR)
   expect(sent).toEqual(['go on'])
 })
+
+test('in 2h sends continue then; cancel stops it', async ($, on) => {
+  const { clock, sent } = engine(on, 2 * HOUR)
+  await $.session.start({ source: 'startup', cwd: '/work' } as never)
+  const set = (await $.command.run(run('in 2h'))) as { text: string }
+  expect(set.text).toMatch(/2 小时后/)
+  await clock.advance(2 * HOUR - 1000)
+  expect(sent).toEqual([])
+  await clock.advance(1000)
+  expect(sent).toEqual(['continue'])
+
+  await $.command.run(run('in 30m 接着写测试'))
+  await $.command.run(run('cancel'))
+  await clock.advance(HOUR)
+  expect(sent).toEqual(['continue'])
+})
+
+test('at a clock time, with a message of its own', async ($, on) => {
+  const { clock, sent } = engine(on, 2 * HOUR)
+  await $.session.start({ source: 'startup', cwd: '/work' } as never)
+  // an hour and a half from now, in the local time the module reads
+  const d = new Date(T0 + 90 * 60 * 1000)
+  const hhmm = `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
+  const set = (await $.command.run(run(`at ${hhmm} 继续 review`))) as { text: string }
+  expect(set.text).toMatch(/1.5 小时后/)
+  const state = (await $.command.run(run(''))) as { text: string }
+  expect(state.text).toMatch(/定时继续：.*继续 review/)
+  await clock.advance(90 * 60 * 1000)
+  expect(sent).toEqual(['继续 review'])
+
+  const bad = (await $.command.run(run('at 25:00'))) as { text: string }
+  expect(bad.text).toMatch(/看不懂时间/)
+})

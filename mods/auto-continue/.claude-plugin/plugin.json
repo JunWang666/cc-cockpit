@@ -1,7 +1,7 @@
 {
   "name": "auto-continue",
   "version": "0.1.0",
-  "description": "When a turn stops on a used-up quota, wait for the window to reset and send a prompt to carry on, if the reset comes within the wait you allow",
+  "description": "Carry the work on by itself: once a used-up quota resets within the wait you allow, or at a time you set",
   "types": "./types/index.d.ts",
   "userConfig": {
     "enabledByDefault": {
@@ -21,6 +21,12 @@
       "title": "Prompt sent on reset",
       "description": "What is sent to carry the work on once the quota resets",
       "default": "额度已刷新，请从中断的地方继续完成刚才的任务。"
+    },
+    "scheduledPrompt": {
+      "type": "string",
+      "title": "Prompt sent at a set time",
+      "description": "What /auto-continue at or in sends when its time comes and no message was given",
+      "default": "continue"
     },
     "windows": {
       "type": "string",

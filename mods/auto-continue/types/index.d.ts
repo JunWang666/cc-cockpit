@@ -14,6 +14,8 @@ declare module 'claude-code' {
       limitedSince: number | null
       wait: AutoContinueWait | null
       attempts: number
+      // a continue sent at a set time: `/auto-continue at 14:30` or `in 2h`
+      scheduled: { at: number; text: string } | null
     }
   }
 }

@@ -7,7 +7,7 @@
     {
       "name": "auto-continue",
       "source": "./mods/auto-continue",
-      "description": "/auto-continue on [1d]：额度用完后，在允许的等待时间内刷新就自动发消息继续（终端和桌面通用）"
+      "description": "/auto-continue on [1d]：额度用完后在允许的等待时间内刷新就自动继续；at 14:30 / in 2h：到点定时继续（终端和桌面通用）"
     },
     {
       "name": "desktop-cockpit",

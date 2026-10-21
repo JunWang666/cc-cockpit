@@ -8,6 +8,7 @@ const maxWaitAtom = atom({ plugin: 'auto-continue', key: 'maxWaitMs' } as const,
 const limitedSince = atom({ plugin: 'auto-continue', key: 'limitedSince' } as const, null)
 const waitAtom = atom({ plugin: 'auto-continue', key: 'wait' } as const, null)
 const attempts = atom({ plugin: 'auto-continue', key: 'attempts' } as const, 0)
+const scheduledAtom = atom({ plugin: 'auto-continue', key: 'scheduled' } as const, null)
 
 const HOUR = 60 * 60 * 1000
 // Sent a little after the reset, so the new window is surely open.
@@ -18,12 +19,22 @@ const POLL_MS = 30 * 60 * 1000
 const MAX_ATTEMPTS = 3
 const MODE = 'auto-continue'
 const DEFAULT_PROMPT = '额度已刷新，请从中断的地方继续完成刚才的任务。'
+const DEFAULT_SCHEDULED_PROMPT = 'continue'
 const LABELS: Record<string, string> = { five_hour: '5 小时额度', seven_day: '周额度', spend_limit: '花费额度' }
+const USAGE =
+  '用法：/auto-continue on [1d|12h|90m] · off · at 14:30 [消息] · at 10/22 09:00 [消息] · in 2h [消息] · cancel · 不带参数看状态。'
 
 // The manifest's options, read once per load by register.
-let config = { isEnabledByDefault: false, maxWaitMs: 24 * HOUR, prompt: DEFAULT_PROMPT, isWeeklyOnly: false }
-// The module's own timer: a reload drops it, and session.start arms it again from $.state.
+let config = {
+  isEnabledByDefault: false,
+  maxWaitMs: 24 * HOUR,
+  prompt: DEFAULT_PROMPT,
+  scheduledPrompt: DEFAULT_SCHEDULED_PROMPT,
+  isWeeklyOnly: false,
+}
+// The module's own timers: a reload drops them, and session.start arms them again from $.state.
 let timer: Timer | undefined
+let scheduleTimer: Timer | undefined
 
 const pad = (n: number) => String(n).padStart(2, '0')
 const when = (ms: number) => {
@@ -49,6 +60,19 @@ const parseSpan = (text: string) => {
   return ms > 0 ? ms : null
 }
 
+// `14:30` (today, or tomorrow once it has passed) or `10/22 14:30` (this year, or next once passed), local time.
+const parseTime = (text: string, now: number) => {
+  const m = /^(?:(\d{1,2})[/-](\d{1,2})\s+)?(\d{1,2})[:：](\d{2})$/.exec(text.trim())
+  if (!m) return null
+  const [hour, minute] = [Number(m[3]), Number(m[4])]
+  if (hour > 23 || minute > 59) return null
+  const d = new Date(now)
+  if (m[1]) d.setMonth(Number(m[1]) - 1, Number(m[2]))
+  d.setHours(hour, minute, 0, 0)
+  if (d.getTime() <= now) m[1] ? d.setFullYear(d.getFullYear() + 1) : d.setDate(d.getDate() + 1)
+  return d.getTime()
+}
+
 async function isEnabled($: EngineInterface) {
   return (await read($, isEnabledAtom)) ?? config.isEnabledByDefault
 }
@@ -59,8 +83,53 @@ async function maxWait($: EngineInterface) {
 
 async function showStatus($: EngineInterface) {
   const wait = await read($, waitAtom)
-  if (wait && (await isEnabled($))) $.ui.status(`⏳ ${label(wait.kind)}用完 · ${when(wait.wakeAt)} 自动继续`)
-  else $.ui.status(undefined)
+  const scheduled = await read($, scheduledAtom)
+  const parts = [
+    wait && (await isEnabled($)) ? `⏳ ${label(wait.kind)}用完 · ${when(wait.wakeAt)} 自动继续` : null,
+    scheduled ? `⏰ ${when(scheduled.at)} 定时继续` : null,
+  ].filter(Boolean)
+  $.ui.status(parts.length > 0 ? parts.join('  ') : undefined)
+}
+
+function armSchedule($: EngineInterface, at: number, now: number) {
+  scheduleTimer?.cancel()
+  scheduleTimer = $.clock.after(Math.max(1000, at - now), () => void fireSchedule($).catch(() => undefined))
+}
+
+async function cancelSchedule($: EngineInterface) {
+  scheduleTimer?.cancel()
+  scheduleTimer = undefined
+  await update($, scheduledAtom, () => null)
+  await showStatus($)
+}
+
+async function fireSchedule($: EngineInterface) {
+  scheduleTimer = undefined
+  const scheduled = await read($, scheduledAtom)
+  if (scheduled === null) return
+  await update($, scheduledAtom, () => null)
+  await showStatus($)
+  $.ui.toast('到点了，定时继续')
+  await $.prompt.submit({ text: scheduled.text }).catch((err: unknown) => $.ui.toast(`定时继续没能发出消息：${String(err)}`))
+}
+
+// `at 14:30 [text]`, `at 10/22 09:00 [text]` or `in 2h [text]`: send the text (or the option's) then.
+async function schedule($: EngineInterface, verb: 'at' | 'in', words: string[]) {
+  const now = await $.clock.now()
+  const hasDate = verb === 'at' && /^\d{1,2}[/-]\d{1,2}$/.test(words[0] ?? '')
+  const timeWords = hasDate ? 2 : 1
+  const given = words.slice(0, timeWords).join(' ')
+  const at = verb === 'at' ? parseTime(given, now) : (s => (s === null ? null : now + s))(parseSpan(given))
+  if (at === null) {
+    return verb === 'at'
+      ? `看不懂时间「${given}」：写成 14:30 或 10/22 09:00 这样。`
+      : `看不懂时长「${given}」：写成 2h、90m、1d 这样。`
+  }
+  const text = words.slice(timeWords).join(' ').trim() || config.scheduledPrompt
+  await update($, scheduledAtom, () => ({ at, text }))
+  armSchedule($, at, now)
+  await showStatus($)
+  return `已定时：${when(at)}（${span(at - now)}后）发送「${text}」。/auto-continue cancel 取消。`
 }
 
 async function clear($: EngineInterface) {
@@ -135,6 +204,7 @@ export const register: Register = (on, options) => {
     isEnabledByDefault: Boolean(options.enabledByDefault),
     maxWaitMs: Math.max(0, Number(options.maxWaitHours ?? 24)) * HOUR,
     prompt: String(options.prompt ?? '').trim() || DEFAULT_PROMPT,
+    scheduledPrompt: String(options.scheduledPrompt ?? '').trim() || DEFAULT_SCHEDULED_PROMPT,
     isWeeklyOnly: options.windows === 'seven_day',
   }
 
@@ -142,12 +212,15 @@ export const register: Register = (on, options) => {
     const started = await next(e)
     await $.command.register({
       name: 'auto-continue',
-      description: '额度用完后，在允许的等待时间内刷新就自动继续：on [时长] / off / 不带参数看状态',
-      argumentHint: '[on [1d|12h|90m] | off]',
+      description: '额度刷新后自动继续（on [时长] / off），或到点定时继续（at 14:30 / in 2h [消息]，cancel 取消）',
+      argumentHint: '[on [1d] | off | at 14:30 [消息] | in 2h [消息] | cancel]',
     })
-    // A reload, or a session resumed while waiting: arm the wait again.
+    // A reload, or a session resumed while waiting: arm the waits again.
+    const now = await $.clock.now()
     const wait = await read($, waitAtom)
-    if (wait && (await isEnabled($))) arm($, wait, await $.clock.now())
+    if (wait && (await isEnabled($))) arm($, wait, now)
+    const scheduled = await read($, scheduledAtom)
+    if (scheduled) armSchedule($, scheduled.at, now)
     await showStatus($)
     return started
   })
@@ -168,15 +241,23 @@ export const register: Register = (on, options) => {
       await showStatus($)
       return { text: `自动继续已开启：额度用完后 ${span(await maxWait($))} 内刷新，就发送「${config.prompt}」。` }
     }
-    if (verb) return { text: '用法：/auto-continue on [1d|12h|90m]，/auto-continue off，不带参数看状态。' }
+    if (verb === 'at' || verb === 'in') return { text: await schedule($, verb, rest) }
+    if (verb === 'cancel') {
+      const had = (await read($, scheduledAtom)) !== null
+      await cancelSchedule($)
+      return { text: had ? '已取消定时继续。' : '没有定时继续要取消。' }
+    }
+    if (verb) return { text: USAGE }
 
     const wait = await read($, waitAtom)
+    const scheduled = await read($, scheduledAtom)
     const state = !(await isEnabled($))
-      ? '自动继续：关'
+      ? '额度自动继续：关'
       : wait
-        ? `自动继续：开，正在等待，${when(wait.wakeAt)} 发送「${config.prompt}」`
-        : `自动继续：开，额度用完后 ${span(await maxWait($))} 内刷新就继续`
-    return { text: state }
+        ? `额度自动继续：开，正在等待，${when(wait.wakeAt)} 发送「${config.prompt}」`
+        : `额度自动继续：开，额度用完后 ${span(await maxWait($))} 内刷新就继续`
+    const timed = scheduled ? `定时继续：${when(scheduled.at)} 发送「${scheduled.text}」` : '定时继续：无'
+    return { text: `${state}\n${timed}` }
   })
 
   // The main conversation stopped on a used-up quota.
