@@ -45,10 +45,13 @@ declare module 'claude-code' {
     // what the cockpit reads of the auto-continue mod, when it is installed
     'auto-continue': {
       isEnabled: boolean | null
+      maxWaitMs: number | null
       wait: { wakeAt: number; kind: string | null } | null
       scheduled: { at: number; text: string } | null
     }
     'desktop-cockpit': {
+      // the message typed in the usage tab for a set-time continue
+      autoMessage: string
       stats: CockpitStats
       windows: CockpitWindow[]
       cacheExpiresAt: number | null

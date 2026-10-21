@@ -25,6 +25,8 @@ const filter = atom({ plugin: 'desktop-cockpit', key: 'filter' } as const, '')
 const autoOn = atom({ plugin: 'auto-continue', key: 'isEnabled' } as const, null)
 const autoWait = atom({ plugin: 'auto-continue', key: 'wait' } as const, null)
 const autoScheduled = atom({ plugin: 'auto-continue', key: 'scheduled' } as const, null)
+const autoMaxWait = atom({ plugin: 'auto-continue', key: 'maxWaitMs' } as const, null)
+const autoMessage = atom({ plugin: 'desktop-cockpit', key: 'autoMessage' } as const, '')
 
 const TABS: { id: CockpitTab; label: string }[] = [
   { id: 'usage', label: '用量' },
@@ -573,7 +575,7 @@ export const register: Register = on => {
             {list.map(w => meter(w.kind, LABELS[w.kind] ?? w.kind, w.percentUsed, resetIn(w.resetsAt, at)))}
             {meter('context', '上下文', s.context, '')}
           </Box>
-          {await autoSection($, { Box, Text, Button }, at)}
+          {await autoSection($, ui, at)}
         </Box>
       )
     } else if (current === 'project') {
@@ -649,32 +651,118 @@ export const register: Register = on => {
 
 type Elements = Pick<ReturnType<EngineInterface['ui']['resolve']>, 'Box' | 'Text' | 'Button'>
 
-// The usage tab's auto-continue block: what it waits for, and buttons that run its command. Absent when it is not installed.
-async function autoSection($: EngineInterface, { Box, Text, Button }: Elements, at: number) {
+const HOUR_MS = 60 * 60 * 1000
+// The longest waits the picker offers, as /auto-continue on takes them.
+const WAITS: { value: string; label: string; ms: number }[] = [
+  { value: '6h', label: '最多等 6 小时', ms: 6 * HOUR_MS },
+  { value: '12h', label: '最多等 12 小时', ms: 12 * HOUR_MS },
+  { value: '1d', label: '最多等 1 天', ms: 24 * HOUR_MS },
+  { value: '2d', label: '最多等 2 天', ms: 48 * HOUR_MS },
+  { value: '3d', label: '最多等 3 天', ms: 72 * HOUR_MS },
+]
+// The set times the picker offers: `in` a span, or `at` a clock time.
+const WHENS: { value: string; label: string }[] = [
+  { value: 'in 30m', label: '30 分钟后' },
+  { value: 'in 1h', label: '1 小时后' },
+  { value: 'in 2h', label: '2 小时后' },
+  { value: 'in 5h', label: '5 小时后' },
+  { value: 'at 09:00', label: '下一个 9:00' },
+]
+const isSpan = (text: string) => /^\d+(?:\.\d+)?\s*(?:d|h|m|天|小时|分钟|分)$/i.test(text.trim())
+
+async function scheduleAuto($: EngineInterface, when: string) {
+  const message = (await read($, autoMessage)).trim()
+  await runAuto($, message ? `${when} ${message}` : when)
+}
+
+// The usage tab's auto-continue block: what it waits for, and fields that run its command. Absent when it is not installed.
+async function autoSection($: EngineInterface, ui: ReturnType<EngineInterface['ui']['resolve']>, at: number) {
+  const { Box, Text, Button } = ui
+  const Input = 'Input' in ui ? ui.Input : undefined
+  const Select = 'Select' in ui ? ui.Select : undefined
   const isOn = await read($, autoOn)
   if (isOn === null) return null
   const wait = await read($, autoWait)
   const scheduled = await read($, autoScheduled)
-  return (
-    <Box key="auto" flexDirection="column">
-      <Text dimColor size="footnote">自动继续</Text>
-      <Text>
-        {wait ? (
-          <Text color={WARN}>{`⏳ ${wait.kind ? (AUTO_LABELS[wait.kind] ?? wait.kind) : '额度'}用完，${clockTime(wait.wakeAt, at)} 自动继续`}</Text>
-        ) : isOn ? (
-          '额度用完后自动继续：开'
-        ) : (
-          <Text dimColor>额度用完后自动继续：关</Text>
-        )}
-      </Text>
+  const maxWait = await read($, autoMaxWait)
+  const message = await read($, autoMessage)
+
+  const status = (
+    <Box key="auto-status" flexDirection="column">
+      {wait ? (
+        <Text color={WARN}>{`⏳ ${wait.kind ? (AUTO_LABELS[wait.kind] ?? wait.kind) : '额度'}用完，${clockTime(wait.wakeAt, at)} 自动继续`}</Text>
+      ) : null}
       {scheduled ? <Text color={SPEED}>{`⏰ ${clockTime(scheduled.at, at)} 发送「${scheduled.text}」`}</Text> : null}
-      <Box flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
-        <Button key="auto-toggle" label={isOn ? '关闭额度自动继续' : '开启额度自动继续'} onPress={() => runAuto($, isOn ? 'off' : 'on')} />
-        {scheduled ? (
-          <Button key="auto-cancel" label="取消定时" onPress={() => runAuto($, 'cancel')} />
-        ) : (
-          <Button key="auto-in-1h" label="1 小时后继续" onPress={() => runAuto($, 'in 1h')} />
-        )}
+    </Box>
+  )
+
+  // A surface with no fields (the phone) keeps the two buttons.
+  if (!Input || !Select) {
+    return (
+      <Box key="auto" flexDirection="column">
+        <Text dimColor size="footnote">自动继续</Text>
+        <Text dimColor={!isOn}>{isOn ? '额度用完后自动继续：开' : '额度用完后自动继续：关'}</Text>
+        {status}
+        <Box flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
+          <Button key="auto-toggle" label={isOn ? '关闭额度自动继续' : '开启额度自动继续'} onPress={() => runAuto($, isOn ? 'off' : 'on')} />
+          {scheduled ? (
+            <Button key="auto-cancel" label="取消定时" onPress={() => runAuto($, 'cancel')} />
+          ) : (
+            <Button key="auto-in-1h" label="1 小时后继续" onPress={() => runAuto($, 'in 1h')} />
+          )}
+        </Box>
+      </Box>
+    )
+  }
+
+  // The wait picker shows the session's wait; one the picker does not list is shown as its own row.
+  const known = WAITS.find(w => w.ms === maxWait)
+  const waitOptions = [
+    { value: 'off', label: '关' },
+    ...(isOn && maxWait !== null && !known ? [{ value: 'current', label: `最多等 ${Math.round((maxWait / HOUR_MS) * 10) / 10} 小时` }] : []),
+    ...WAITS.map(w => ({ value: w.value, label: w.label })),
+  ]
+  const waitValue = !isOn ? 'off' : known ? known.value : maxWait !== null ? 'current' : '1d'
+
+  return (
+    <Box key="auto" flexDirection="column" rowGap={1}>
+      <Text dimColor size="footnote">自动继续</Text>
+      {status}
+      <Select
+        key="auto-wait"
+        label="额度用完后自动继续"
+        options={waitOptions}
+        value={waitValue}
+        onSelect={value => (value === 'current' ? undefined : runAuto($, value === 'off' ? 'off' : `on ${value}`))}
+      />
+      <Input
+        key="auto-message"
+        label="定时发送的内容"
+        placeholder="留空发送 continue"
+        value={message}
+        onInput={value => update($, autoMessage, () => value)}
+        onSubmit={value => update($, autoMessage, () => value)}
+      />
+      <Box flexDirection="row" columnGap={1} flexWrap="wrap" alignItems="flex-end">
+        <Select
+          key="auto-when"
+          label="定时继续"
+          options={[{ value: 'none', label: '选一个时间…' }, ...WHENS]}
+          value="none"
+          onSelect={value => (value === 'none' ? undefined : scheduleAuto($, value))}
+        />
+        <Input
+          key="auto-at"
+          label="或指定时间"
+          placeholder="14:30、10/22 09:00 或 2h"
+          submitLabel="定时"
+          onSubmit={value => {
+            const when = value.trim()
+            if (!when) return $.ui.toast('先填一个时间：14:30、10/22 09:00 或 2h')
+            return scheduleAuto($, `${isSpan(when) ? 'in' : 'at'} ${when}`)
+          }}
+        />
+        {scheduled ? <Button key="auto-cancel" label="取消定时" onPress={() => runAuto($, 'cancel')} /> : null}
       </Box>
     </Box>
   )

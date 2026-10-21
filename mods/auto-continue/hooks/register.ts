@@ -217,6 +217,7 @@ export const register: Register = (on, options) => {
     })
     // Settle the option's default into the state, so the quota bands that read it see on or off.
     if ((await read($, isEnabledAtom)) === null) await update($, isEnabledAtom, () => config.isEnabledByDefault)
+    if ((await read($, maxWaitAtom)) === null) await update($, maxWaitAtom, () => config.maxWaitMs)
     // A reload, or a session resumed while waiting: arm the waits again.
     const now = await $.clock.now()
     const wait = await read($, waitAtom)

@@ -145,7 +145,17 @@ test('auto-continue sits beside the quota, and the pane runs its command', async
   await $.command.run({ command: 'cockpit', args: 'usage', origin: { kind: 'composer' }, presentation: {} } as never)
   const pane = await $.ui.mount({ plugin: 'desktop-cockpit', surface: 'desktop', ...PANE } as never)
   expect(await pane.find({ type: 'Text', text: /周额度用完/ })).toBeDefined()
-  await pane.press({ key: 'auto-toggle' })
-  await pane.press({ key: 'auto-in-1h' })
-  expect(ran).toEqual(['auto-continue off', 'auto-continue in 1h'])
+  await pane.select({ key: 'auto-wait', value: '12h' })
+  await pane.select({ key: 'auto-wait', value: 'off' })
+  await pane.select({ key: 'auto-when', value: 'in 1h' })
+  await pane.input({ key: 'auto-message', text: '接着写测试', kind: 'change' })
+  await pane.input({ key: 'auto-at', text: '14:30' })
+  await pane.input({ key: 'auto-at', text: '2h' })
+  expect(ran).toEqual([
+    'auto-continue on 12h',
+    'auto-continue off',
+    'auto-continue in 1h',
+    'auto-continue at 14:30 接着写测试',
+    'auto-continue in 2h 接着写测试',
+  ])
 })
