@@ -64,3 +64,33 @@ test('divider and stats still draw with no quota data', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: /^━+$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '5h' })).toBeUndefined()
 })
+
+test('auto-continue sits beside the quota when it waits', async ($, on) => {
+  const autoState: Record<string, unknown> = {}
+  on('state.get', (_$: unknown, e: { plugin: string; key: string }, next: (e: unknown) => unknown) =>
+    e.plugin === 'auto-continue' ? ({ value: { value: autoState[e.key], version: 1 } } as never) : next(e),
+  )
+  on('clock.now', () => ({ value: T0 }))
+  on('session.start', () => ({ cwd: '/work' }) as never)
+  on('session.turns', () => ({ value: 1 }))
+  on('session.usage', () => usage(LIMITS) as never)
+  on('ui.render', { component: 'AbovePrompt' }, ($$, e) => {
+    const { Box } = $$.ui.resolve(e)
+    return <Box />
+  })
+  await $.session.start({ source: 'startup', cwd: '/work' } as never)
+
+  let ui = await $.ui.mount({ plugin: 'quota-band', surface: 'terminal', ...band(160) } as never)
+  expect(await ui.find({ type: 'Text', text: /自动续|定时续/ })).toBeUndefined()
+  await ui.unmount()
+
+  autoState.isEnabled = true
+  autoState.scheduled = { at: T0 + 3600_000, text: 'continue' }
+  ui = await $.ui.mount({ plugin: 'quota-band', surface: 'terminal', ...band(160) } as never)
+  expect(await ui.find({ type: 'Text', text: /定时续$/ })).toBeDefined()
+  await ui.unmount()
+
+  autoState.wait = { wakeAt: T0 + 2 * 3600_000, kind: 'seven_day' }
+  ui = await $.ui.mount({ plugin: 'quota-band', surface: 'terminal', ...band(160) } as never)
+  expect(await ui.find({ type: 'Text', text: /自动续$/ })).toBeDefined()
+})

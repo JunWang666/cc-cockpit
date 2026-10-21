@@ -14,6 +14,10 @@ const stats = atom({ plugin: 'quota-band', key: 'stats' } as const, {
 const windows = atom({ plugin: 'quota-band', key: 'windows' } as const, [])
 const cacheExpiresAt = atom({ plugin: 'quota-band', key: 'cacheExpiresAt' } as const, null)
 const now = atom({ plugin: 'quota-band', key: 'now' } as const, 0)
+// The auto-continue mod's state, read only: absent when it is not installed.
+const autoOn = atom({ plugin: 'auto-continue', key: 'isEnabled' } as const, null)
+const autoWait = atom({ plugin: 'auto-continue', key: 'wait' } as const, null)
+const autoScheduled = atom({ plugin: 'auto-continue', key: 'scheduled' } as const, null)
 
 const LABELS: Record<string, string> = { five_hour: '5h', seven_day: '周', spend_limit: '花费' }
 const BAR = 10
@@ -46,6 +50,12 @@ const bar = (pct: number) => {
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
+// `14:30` today, `10/22 14:30` on another day.
+const clockTime = (ms: number, at: number) => {
+  const d = new Date(ms)
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return d.toDateString() === new Date(at).toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+}
 const usd = (n: number) => `$${n.toFixed(2)}`
 
 const resetIn = (resetsAt: string | undefined, at: number) => {
@@ -149,6 +159,26 @@ export const register: Register = on => {
     const cacheText =
       e.props.isWorking ? '…' : left === null ? '—' : left === 0 ? '已过期' : `${pad(Math.floor(left / 60))}:${pad(left % 60)}`
 
+    // auto-continue beside the quota: waiting for a reset, a set time, or just on.
+    const wait = await read($, autoWait)
+    const scheduled = await read($, autoScheduled)
+    const isAutoOn = (await read($, autoOn)) === true
+    const auto = wait ? (
+      <Box key="auto" flexDirection="row" columnGap={1} flexShrink={0}>
+        <Text color={WARN}>⏳</Text>
+        <Text bold color={WARN}>{`${clockTime(wait.wakeAt, at)}${isMid ? ' 自动续' : ''}`}</Text>
+      </Box>
+    ) : scheduled ? (
+      <Box key="auto" flexDirection="row" columnGap={1} flexShrink={0}>
+        <Text color={SPEED}>⏰</Text>
+        <Text bold color={SPEED}>{`${clockTime(scheduled.at, at)}${isMid ? ' 定时续' : ''}`}</Text>
+      </Box>
+    ) : isAutoOn ? (
+      <Box key="auto" flexDirection="row" flexShrink={0}>
+        <Text dimColor>{isMid ? '⟳ 自动续' : '⟳'}</Text>
+      </Box>
+    ) : null
+
     const row = (
       <Box key="row" flexDirection="row" columnGap={isMid ? 3 : 2} paddingX={1} flexWrap="nowrap" overflow="hidden">
         <Box flexDirection="row" columnGap={1} flexShrink={0}>
@@ -176,6 +206,7 @@ export const register: Register = on => {
             {isFull ? <Text dimColor>{resetIn(w.resetsAt, at)}</Text> : null}
           </Box>
         ))}
+        {auto}
         <Box flexGrow={1} flexShrink={1} />
         <Box flexDirection="row" columnGap={1} flexShrink={0}>
           <Text dimColor>上下文</Text>

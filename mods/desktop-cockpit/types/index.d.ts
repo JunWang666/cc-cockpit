@@ -42,6 +42,12 @@ export type CockpitTab = 'usage' | 'project' | 'prompts'
 
 declare module 'claude-code' {
   interface PluginState {
+    // what the cockpit reads of the auto-continue mod, when it is installed
+    'auto-continue': {
+      isEnabled: boolean | null
+      wait: { wakeAt: number; kind: string | null } | null
+      scheduled: { at: number; text: string } | null
+    }
     'desktop-cockpit': {
       stats: CockpitStats
       windows: CockpitWindow[]

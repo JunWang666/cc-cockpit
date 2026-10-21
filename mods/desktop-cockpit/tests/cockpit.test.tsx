@@ -116,3 +116,36 @@ test('the pane: usage, project and prompts tabs', async ($, on) => {
     await ui.unmount()
   }
 })
+
+test('auto-continue sits beside the quota, and the pane runs its command', async ($, on) => {
+  engine(on)
+  const ran: string[] = []
+  // auto-continue's state, as that mod would hold it
+  const autoState: Record<string, unknown> = {}
+  on('state.get', (_$: unknown, e: { plugin: string; key: string }, next: (e: unknown) => unknown) =>
+    e.plugin === 'auto-continue' ? ({ value: { value: autoState[e.key], version: 1 } } as never) : next(e),
+  )
+  on('command.run', (_$: unknown, e: { command: string; args?: string }) => {
+    ran.push(`${e.command} ${e.args ?? ''}`.trim())
+    return { text: 'ok' } as never
+  })
+  await $.session.start({ source: 'startup', cwd: 'C:/work' } as never)
+
+  // not installed: nothing drawn for it
+  let ui = await $.ui.mount({ plugin: 'desktop-cockpit', surface: 'desktop', ...BAND } as never)
+  expect(await ui.find({ type: 'Button', key: 'auto' })).toBeUndefined()
+  await ui.unmount()
+
+  autoState.isEnabled = true
+  autoState.wait = { wakeAt: T0 + 2 * 3600_000, kind: 'seven_day' }
+  ui = await $.ui.mount({ plugin: 'desktop-cockpit', surface: 'desktop', ...BAND } as never)
+  expect(await ui.find({ type: 'Text', text: /⏳ .* 自动续/ })).toBeDefined()
+  await ui.unmount()
+
+  await $.command.run({ command: 'cockpit', args: 'usage', origin: { kind: 'composer' }, presentation: {} } as never)
+  const pane = await $.ui.mount({ plugin: 'desktop-cockpit', surface: 'desktop', ...PANE } as never)
+  expect(await pane.find({ type: 'Text', text: /周额度用完/ })).toBeDefined()
+  await pane.press({ key: 'auto-toggle' })
+  await pane.press({ key: 'auto-in-1h' })
+  expect(ran).toEqual(['auto-continue off', 'auto-continue in 1h'])
+})

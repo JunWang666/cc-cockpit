@@ -215,6 +215,8 @@ export const register: Register = (on, options) => {
       description: '额度刷新后自动继续（on [时长] / off），或到点定时继续（at 14:30 / in 2h [消息]，cancel 取消）',
       argumentHint: '[on [1d] | off | at 14:30 [消息] | in 2h [消息] | cancel]',
     })
+    // Settle the option's default into the state, so the quota bands that read it see on or off.
+    if ((await read($, isEnabledAtom)) === null) await update($, isEnabledAtom, () => config.isEnabledByDefault)
     // A reload, or a session resumed while waiting: arm the waits again.
     const now = await $.clock.now()
     const wait = await read($, waitAtom)

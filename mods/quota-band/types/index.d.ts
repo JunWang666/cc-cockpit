@@ -11,6 +11,12 @@ export type QuotaStats = {
 
 declare module 'claude-code' {
   interface PluginState {
+    // what the band reads of the auto-continue mod, when it is installed
+    'auto-continue': {
+      isEnabled: boolean | null
+      wait: { wakeAt: number; kind: string | null } | null
+      scheduled: { at: number; text: string } | null
+    }
     'quota-band': {
       stats: QuotaStats
       windows: QuotaWindow[]

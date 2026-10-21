@@ -21,6 +21,10 @@ const isWelcomeShown = atom({ plugin: 'desktop-cockpit', key: 'isWelcomeShown' }
 const openDoc = atom({ plugin: 'desktop-cockpit', key: 'openDoc' } as const, null)
 const tab = atom({ plugin: 'desktop-cockpit', key: 'tab' } as const, 'usage' as CockpitTab)
 const filter = atom({ plugin: 'desktop-cockpit', key: 'filter' } as const, '')
+// The auto-continue mod's state, read only: absent when it is not installed.
+const autoOn = atom({ plugin: 'auto-continue', key: 'isEnabled' } as const, null)
+const autoWait = atom({ plugin: 'auto-continue', key: 'wait' } as const, null)
+const autoScheduled = atom({ plugin: 'auto-continue', key: 'scheduled' } as const, null)
 
 const TABS: { id: CockpitTab; label: string }[] = [
   { id: 'usage', label: '用量' },
@@ -284,6 +288,22 @@ async function scrollToBottom($: EngineInterface) {
   await scrollTo($, bottomRow, 'end')
 }
 
+// ── auto-continue, shown beside the quota: its state is read here, changed through its own command ──
+
+const AUTO_LABELS: Record<string, string> = { five_hour: '5 小时额度', seven_day: '周额度', spend_limit: '花费额度' }
+
+// `14:30` today, `10/22 14:30` on another day.
+const clockTime = (ms: number, at: number) => {
+  const d = new Date(ms)
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return d.toDateString() === new Date(at).toDateString() ? hm : `${d.getMonth() + 1}/${d.getDate()} ${hm}`
+}
+
+async function runAuto($: EngineInterface, args: string) {
+  const ran = await $.command.run({ command: 'auto-continue', args }).catch((err: unknown) => ({ text: `没能执行 /auto-continue：${String(err)}` }))
+  if (ran.text) $.ui.toast(ran.text)
+}
+
 async function openPane($: EngineInterface, to?: CockpitTab) {
   if (to) await update($, tab, () => to)
   if ((await read($, tab)) === 'project' && (await read($, project)) === null) await scan($)
@@ -398,6 +418,26 @@ export const register: Register = on => {
     const isFull = cols >= DESK_FULL_COLUMNS
     const isMid = cols >= DESK_MID_COLUMNS
 
+    // auto-continue beside the quota: waiting for a reset, a set time, or just on; a click opens its controls.
+    const wait = await read($, autoWait)
+    const scheduled = await read($, autoScheduled)
+    const isAutoOn = (await read($, autoOn)) === true
+    const autoText = wait
+      ? `⏳ ${clockTime(wait.wakeAt, at)}${isMid ? ' 自动续' : ''}`
+      : scheduled
+        ? `⏰ ${clockTime(scheduled.at, at)}${isMid ? ' 定时续' : ''}`
+        : isAutoOn
+          ? isMid ? '⟳ 自动续' : '⟳'
+          : null
+    const auto =
+      autoText === null ? null : (
+        <Button key="auto" plain onPress={() => openPane($, 'usage')}>
+          <Text bold={!!(wait || scheduled)} dimColor={!wait && !scheduled} color={wait ? WARN : scheduled ? SPEED : undefined} size="footnote">
+            {autoText}
+          </Text>
+        </Button>
+      )
+
     const row = (
       <Box key="cockpit-row" flexDirection="row" columnGap={2} flexWrap="nowrap" paddingX={1} alignItems="center">
         <Box flexDirection="row" columnGap={isFull ? 3 : 2} flexWrap="nowrap" flexShrink={1} flexGrow={1} overflow="hidden">
@@ -425,6 +465,7 @@ export const register: Register = on => {
               <Text bold tabular color={level(w.percentUsed)} size="footnote">{`${Math.round(w.percentUsed)}%`}</Text>
             </Box>
           ))}
+          {auto}
           <Box flexDirection="row" columnGap={1} alignItems="center" flexShrink={0}>
             <Text dimColor size="footnote">{isMid ? '上下文' : 'ctx'}</Text>
             {isMid ? <Svg source={bar(s.context, level(s.context), 48)} alt={`${Math.round(s.context)}%`} width={48} height={6} /> : null}
@@ -532,6 +573,7 @@ export const register: Register = on => {
             {list.map(w => meter(w.kind, LABELS[w.kind] ?? w.kind, w.percentUsed, resetIn(w.resetsAt, at)))}
             {meter('context', '上下文', s.context, '')}
           </Box>
+          {await autoSection($, { Box, Text, Button }, at)}
         </Box>
       )
     } else if (current === 'project') {
@@ -606,6 +648,37 @@ export const register: Register = on => {
 // ── shared pieces of the welcome card and the project tab ──
 
 type Elements = Pick<ReturnType<EngineInterface['ui']['resolve']>, 'Box' | 'Text' | 'Button'>
+
+// The usage tab's auto-continue block: what it waits for, and buttons that run its command. Absent when it is not installed.
+async function autoSection($: EngineInterface, { Box, Text, Button }: Elements, at: number) {
+  const isOn = await read($, autoOn)
+  if (isOn === null) return null
+  const wait = await read($, autoWait)
+  const scheduled = await read($, autoScheduled)
+  return (
+    <Box key="auto" flexDirection="column">
+      <Text dimColor size="footnote">自动继续</Text>
+      <Text>
+        {wait ? (
+          <Text color={WARN}>{`⏳ ${wait.kind ? (AUTO_LABELS[wait.kind] ?? wait.kind) : '额度'}用完，${clockTime(wait.wakeAt, at)} 自动继续`}</Text>
+        ) : isOn ? (
+          '额度用完后自动继续：开'
+        ) : (
+          <Text dimColor>额度用完后自动继续：关</Text>
+        )}
+      </Text>
+      {scheduled ? <Text color={SPEED}>{`⏰ ${clockTime(scheduled.at, at)} 发送「${scheduled.text}」`}</Text> : null}
+      <Box flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
+        <Button key="auto-toggle" label={isOn ? '关闭额度自动继续' : '开启额度自动继续'} onPress={() => runAuto($, isOn ? 'off' : 'on')} />
+        {scheduled ? (
+          <Button key="auto-cancel" label="取消定时" onPress={() => runAuto($, 'cancel')} />
+        ) : (
+          <Button key="auto-in-1h" label="1 小时后继续" onPress={() => runAuto($, 'in 1h')} />
+        )}
+      </Box>
+    </Box>
+  )
+}
 
 function gitLine(Text: Elements['Text'], git: CockpitGit | null) {
   if (!git) return <Text dimColor>不是 git 仓库</Text>
