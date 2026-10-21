@@ -29,7 +29,7 @@ test('shows the card at startup, resumes a session, hides on the first prompt', 
 
   await $.session.start({ source: 'startup', cwd: '/work' } as never)
 
-  for (const surface of ['terminal', 'desktop'] as const) {
+  for (const surface of ['terminal'] as const) {
     const ui = await $.ui.mount({ plugin: 'welcome', surface, ...BAND } as never)
     for (const text of ['/work', '最近提交', 'abc1234', '项目文档 · 点一下展开', '登录页样式修好了，下一步加测试。', 'below']) {
       expect([text, (await ui.find({ type: 'Text', text })) !== undefined]).toEqual([text, true])
@@ -42,6 +42,12 @@ test('shows the card at startup, resumes a session, hides on the first prompt', 
     expect(await ui.find({ type: 'Text', text: '## Install' })).toBeUndefined()
     await ui.unmount()
   }
+
+  // the desktop draws desktop-cockpit's card instead
+  const desk = await $.ui.mount({ plugin: 'welcome', surface: 'desktop', ...BAND } as never)
+  expect(await desk.find({ type: 'Text', text: '最近提交' })).toBeUndefined()
+  expect(await desk.find({ type: 'Text', text: 'below' })).toBeDefined()
+  await desk.unmount()
 
   const ui = await $.ui.mount({ plugin: 'welcome', surface: 'terminal', ...BAND } as never)
   await ui.press({ key: 'sess-1' })

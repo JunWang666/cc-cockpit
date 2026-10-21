@@ -59,7 +59,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const found = await read($, info)
-    if (e.props.hasSurvey || !(await read($, isShown)) || found === null) return next(e)
+    // The desktop draws desktop-cockpit's card instead.
+    if (e.surface === 'desktop' || e.props.hasSurvey || !(await read($, isShown)) || found === null) return next(e)
 
     const { Box, Text, Button } = $.ui.resolve(e)
     const cwd = await $.session.cwd()

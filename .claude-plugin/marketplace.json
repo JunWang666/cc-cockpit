@@ -5,6 +5,11 @@
   },
   "plugins": [
     {
+      "name": "desktop-cockpit",
+      "source": "./mods/desktop-cockpit",
+      "description": "桌面版：输入框上方统计行 + 欢迎卡片，/cockpit 面板看用量、项目状态和本会话消息"
+    },
+    {
       "name": "prompt-jump",
       "source": "./mods/prompt-jump",
       "description": "/prompts 列出本会话消息并跳转，/bottom 回到底部"

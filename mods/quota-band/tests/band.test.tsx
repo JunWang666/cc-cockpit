@@ -31,7 +31,7 @@ test('one row: turn, speed, cost, cache, quota and context', async ($, on) => {
 
   await $.session.start({ source: 'startup', cwd: '/work' } as never)
 
-  for (const surface of ['terminal', 'desktop'] as const) {
+  for (const surface of ['terminal'] as const) {
     const ui = await $.ui.mount({ plugin: 'quota-band', surface, ...band(160) } as never)
     for (const text of ['Turn', '6', '$5.64', '68%', '23%', '1h12m后重置', '3天后重置', '上下文', '21%', 'below']) {
       expect([text, (await ui.find({ type: 'Text', text })) !== undefined]).toEqual([text, true])
@@ -39,6 +39,12 @@ test('one row: turn, speed, cost, cache, quota and context', async ($, on) => {
     expect(await ui.find({ type: 'Text', text: /^━+$/ })).toBeDefined()
     await ui.unmount()
   }
+
+  // the desktop draws desktop-cockpit's band instead
+  const desk = await $.ui.mount({ plugin: 'quota-band', surface: 'desktop', ...band(160) } as never)
+  expect(await desk.find({ type: 'Text', text: 'Turn' })).toBeUndefined()
+  expect(await desk.find({ type: 'Text', text: 'below' })).toBeDefined()
+  await desk.unmount()
 
   // narrow: bars and reset times go, percents stay
   const ui = await $.ui.mount({ plugin: 'quota-band', surface: 'terminal', ...band(90) } as never)

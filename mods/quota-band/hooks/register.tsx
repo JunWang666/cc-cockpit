@@ -125,7 +125,8 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    // The desktop draws desktop-cockpit's band instead.
+    if (e.props.hasSurvey || e.surface === 'desktop') return next(e)
     const s = await read($, stats)
     const list = await read($, windows)
     const expiresAt = await read($, cacheExpiresAt)

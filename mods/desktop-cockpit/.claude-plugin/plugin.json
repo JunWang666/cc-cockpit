@@ -1,0 +1,6 @@
+{
+  "name": "desktop-cockpit",
+  "version": "0.1.0",
+  "description": "The cc-cockpit mods for Claude Code Desktop: a stats band above the prompt, a welcome card, and a /cockpit pane with usage, project and your messages",
+  "types": "./types/index.d.ts"
+}
