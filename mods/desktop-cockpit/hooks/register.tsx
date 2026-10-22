@@ -403,7 +403,8 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.surface !== 'desktop' || e.props.hasSurvey) return next(e)
-    const { Box, Text, Button, Svg } = $.ui.resolve(e)
+    isTinted = true
+    const { Box, Text, Button, Svg, Markdown } = $.ui.resolve(e)
     const s = await read($, stats)
     const list = await read($, windows)
     const expiresAt = await read($, cacheExpiresAt)
@@ -483,40 +484,53 @@ export const register: Register = on => {
     )
 
     const found = await read($, project)
-    const card =
+    const welcome =
       (await read($, isWelcomeShown)) && found !== null ? (
-        <Box key="cockpit-welcome" flexDirection="column" borderStyle="round" borderColor={ACCENT} paddingX={1} marginBottom={1}>
-          <Box flexDirection="row" columnGap={2}>
-            <Text bold color={ACCENT}>{await $.session.cwd()}</Text>
-            {gitLine(Text, found.git)}
+        <Box
+          key="cockpit-welcome"
+          flexDirection="column"
+          borderStyle="round"
+          borderColor={`${ACCENT}66`}
+          backgroundColor={`${ACCENT}0d`}
+          paddingX="sm"
+          paddingY="xs"
+          marginBottom="sm"
+        >
+          <Box flexDirection="row" columnGap="sm" alignItems="center" flexWrap="wrap">
+            <Text size="caption" dimColor>欢迎回来</Text>
+            <Text bold mono color={ACCENT}>{await $.session.cwd()}</Text>
+            {gitLine({ Box, Text }, found.git)}
             <Box flexGrow={1} />
             <Button key="welcome-close" label="×" plain role="dismiss" onPress={() => update($, isWelcomeShown, () => false)} />
           </Box>
-          {projectBody($, { Box, Text, Button }, found, await read($, openDoc), 100)}
+          {projectBody($, { Box, Text, Button }, found, await read($, openDoc), 100, true, Markdown)}
         </Box>
       ) : null
 
     const below = await next(e)
     return (
       <Box flexDirection="column">
-        {card}
+        {welcome}
         {row}
         {below}
       </Box>
     )
   })
 
+
   // ── the pane: usage, project and prompts, one tab each ──
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    isTinted = e.surface !== 'terminal'
     const ui = $.ui.resolve(e)
     const { Box, Text, Button } = ui
     const Svg = 'Svg' in ui ? ui.Svg : undefined
+    const Input = 'Input' in ui ? ui.Input : undefined
     const current = await read($, tab)
     const width = Math.max(20, (e.props.bodyColumns || e.viewport?.columns || 80) - 14)
 
     const tabs = (
-      <Box key="tabs" flexDirection="row" columnGap={1} marginBottom={1}>
+      <Box key="tabs" flexDirection="row" columnGap="xs" marginBottom="sm">
         {TABS.map(t => (
           <Button
             key={`tab-${t.id}`}
@@ -539,73 +553,85 @@ export const register: Register = on => {
       const at = await read($, now)
       const expiresAt = await read($, cacheExpiresAt)
       const left = expiresAt === null || at === 0 ? null : Math.max(0, Math.ceil((expiresAt - at) / 60000))
-      const meter = (key: string, label: string, pct: number, note: string) => (
-        <Box key={key} flexDirection="row" columnGap={2} alignItems="center">
-          <Box width={6}><Text dimColor>{label}</Text></Box>
-          {Svg ? <Svg source={bar(pct, level(pct), 160, 8)} alt={`${Math.round(pct)}%`} width={160} height={8} /> : null}
-          <Text bold tabular color={level(pct)}>{`${Math.round(pct)}%`}</Text>
-          <Text dimColor>{note}</Text>
+      const cacheColor = left === null ? CACHE : left <= CACHE_ALERT_MIN ? ALERT : left <= CACHE_WARN_MIN ? WARN : CACHE
+
+      const gauge = (key: string, label: string, pct: number, note: string) => (
+        <Box key={key} flexDirection="column" alignItems="center" rowGap="xs" minWidth={GAUGE_CELLS}>
+          {Svg ? (
+            <Svg source={ring(pct, level(pct))} alt={`${label} ${Math.round(pct)}%`} width={RING} height={RING} />
+          ) : (
+            <Text bold color={level(pct)}>{`${Math.round(pct)}%`}</Text>
+          )}
+          <Text weight="semibold" size="footnote">{label}</Text>
+          <Text dimColor size="caption">{note || ' '}</Text>
         </Box>
       )
+
       body = (
-        <Box flexDirection="column" rowGap={1}>
-          <Box flexDirection="row" columnGap={4} flexWrap="wrap">
-            <Box flexDirection="column">
-              <Text dimColor size="footnote">轮次</Text>
-              <Text bold tabular size="heading">{String(s.turn)}</Text>
-            </Box>
-            <Box flexDirection="column">
-              <Text dimColor size="footnote">输出速度</Text>
-              <Text bold tabular size="heading" color={SPEED}>{s.speed === null ? '—' : `${s.speed} tok/s`}</Text>
-            </Box>
-            <Box flexDirection="column">
-              <Text dimColor size="footnote">本轮 / 本会话</Text>
-              <Text bold tabular size="heading" color={MONEY}>
-                {s.turnCost === null ? '—' : usd(s.turnCost)} <Text dimColor>/ {usd(s.total)}</Text>
-              </Text>
-            </Box>
-            <Box flexDirection="column">
-              <Text dimColor size="footnote">提示缓存</Text>
-              <Text bold tabular size="heading" color={CACHE}>
-                {left === null ? '—' : left === 0 ? '已过期' : `还剩 ${left} 分钟`}
-              </Text>
-            </Box>
+        <Box flexDirection="column" rowGap="sm">
+          <Box flexDirection="row" columnGap="sm" rowGap="sm" flexWrap="wrap">
+            {stat({ Box, Text }, 'turn', '轮次', String(s.turn), '本会话的第几轮')}
+            {stat({ Box, Text }, 'speed', '输出速度', s.speed === null ? '—' : `${s.speed}`, s.speed === null ? '还没测到' : 'tok/s', SPEED)}
+            {stat({ Box, Text }, 'cost', '本轮花费', s.turnCost === null ? '—' : usd(s.turnCost), `本会话 ${usd(s.total)}`, MONEY)}
+            {stat(
+              { Box, Text },
+              'cache',
+              '提示缓存',
+              left === null ? '—' : left === 0 ? '已过期' : `${left} 分钟`,
+              left === null ? '回答后开始计时' : left === 0 ? '下一轮会重新写入' : '后过期',
+              cacheColor,
+              Svg && left !== null ? (
+                <Svg source={bar((left / 60) * 100, cacheColor, 120, 4)} alt={`缓存剩 ${left} 分钟`} width={120} height={4} />
+              ) : null,
+            )}
           </Box>
-          <Box flexDirection="column" rowGap={0}>
-            {list.map(w => meter(w.kind, LABELS[w.kind] ?? w.kind, w.percentUsed, resetIn(w.resetsAt, at)))}
-            {meter('context', '上下文', s.context, '')}
-          </Box>
+          {card(
+            { Box, Text },
+            'quota',
+            '额度',
+            <Box flexDirection="row" columnGap="md" rowGap="sm" flexWrap="wrap" justifyContent="space-around">
+              {list.map(w => gauge(w.kind, AUTO_LABELS[w.kind] ?? w.kind, w.percentUsed, resetIn(w.resetsAt, at)))}
+              {gauge('context', '上下文', s.context, '当前对话占用')}
+            </Box>,
+          )}
           {await autoSection($, ui, at)}
         </Box>
       )
     } else if (current === 'project') {
       const found = await read($, project)
+      const cwd = await $.session.cwd()
       body =
         found === null ? (
           <Text dimColor>正在读取项目状态…</Text>
         ) : (
-          <Box flexDirection="column">
-            <Box flexDirection="row" columnGap={2}>
-              <Text bold color={ACCENT}>{await $.session.cwd()}</Text>
-              {gitLine(Text, found.git)}
-            </Box>
-            {projectBody($, { Box, Text, Button }, found, await read($, openDoc), width)}
+          <Box flexDirection="column" rowGap="sm">
+            {card(
+              { Box, Text },
+              'repo',
+              '仓库',
+              <Box flexDirection="column" rowGap="xs">
+                <Text mono weight="semibold">{cwd}</Text>
+                {gitLine({ Box, Text }, found.git)}
+              </Box>,
+              <Button key="rescan" plain label="刷新" onPress={() => scan($)} />,
+            )}
+            {projectBody($, { Box, Text, Button }, found, await read($, openDoc), width, false, 'Markdown' in ui ? ui.Markdown : undefined)}
           </Box>
         )
     } else {
-      const query = (await read($, filter)).toLowerCase()
+      const rawQuery = await read($, filter)
+      const query = rawQuery.toLowerCase()
       const messages = await $.session.messages()
       // The session's own prompts, matched in order to the transcript rows drawn so far.
       const pool = [...drawn]
-      const prompts = messages
+      const all = messages
         .filter(m => m.role === 'user' && isOwnPrompt(m.text))
         .map((m, i) => {
           const at = pool.findIndex(d => d.text.trim() === m.text.trim())
           const requestId = at >= 0 ? pool.splice(at, 1)[0]?.requestId : undefined
           return { n: i + 1, text: m.text, requestId }
         })
-        .filter(p => !query || p.text.toLowerCase().includes(query))
-        .reverse()
+      const prompts = all.filter(p => !query || p.text.toLowerCase().includes(query)).reverse()
       const jump = async (requestId: string | undefined) => {
         if (!requestId) {
           $.ui.toast('这条还没在对话区加载过：往上滚动经过它一次后就能跳了')
@@ -614,26 +640,47 @@ export const register: Register = on => {
         await scrollTo($, requestId, 'start')
       }
       body = (
-        <Box flexDirection="column">
-          <Box flexDirection="row" columnGap={2}>
-            <Text dimColor>
-              {query ? `过滤「${query}」· ` : ''}
-              {prompts.length} 条消息，最新的在上 · 点一条跳过去
-            </Text>
-            <Box flexGrow={1} />
-            {query ? <Button key="clear-filter" plain label="清除过滤" onPress={() => update($, filter, () => '')} /> : null}
-            <Button key="bottom" plain onPress={() => scrollToBottom($)}>
-              <Text color={ACCENT}>↓ 回到底部</Text>
-            </Button>
+        <Box flexDirection="column" rowGap="sm">
+          <Box flexDirection="row" columnGap="sm" alignItems="flex-end">
+            {Input ? (
+              <Box flexGrow={1}>
+                <Input
+                  key="prompt-filter"
+                  label="过滤"
+                  placeholder="输入关键词"
+                  value={rawQuery}
+                  onInput={value => update($, filter, () => value)}
+                  onSubmit={value => update($, filter, () => value)}
+                />
+              </Box>
+            ) : (
+              <Box flexGrow={1} />
+            )}
+            <Button key="bottom" label="↓ 回到底部" onPress={() => scrollToBottom($)} />
           </Box>
-          {prompts.length === 0 && <Text dimColor>还没有消息。</Text>}
-          {prompts.map(p => (
-            <Button key={`p${p.n}`} plain onPress={() => jump(p.requestId)}>
-              <Text dimColor>#{p.n} </Text>
-              {oneLine(p.text, width)}
-              {p.requestId ? '' : <Text dimColor> ·未加载</Text>}
-            </Button>
-          ))}
+          <Text dimColor size="footnote">
+            {query ? `「${query}」匹配 ${prompts.length} / ${all.length} 条` : `${prompts.length} 条消息`} · 最新的在上 · 点一条跳过去
+          </Text>
+          {prompts.length === 0 ? <Text dimColor>{query ? '没有匹配的消息。' : '还没有消息。'}</Text> : null}
+          <Box flexDirection="column">
+            {prompts.map(p => (
+              <Box
+                key={`row-${p.n}`}
+                flexDirection="row"
+                paddingX="xs"
+                paddingY="xs"
+                borderStyle={isTinted ? "round" : undefined}
+                borderColor={tint("#00000000")}
+                hover={isTinted ? { backgroundColor: HOVER_BG, borderColor: CARD_BORDER } : undefined}
+              >
+                <Button key={`p${p.n}`} plain onPress={() => jump(p.requestId)}>
+                  <Text mono dimColor size="footnote">{`#${String(p.n).padStart(2, '0')}  `}</Text>
+                  {oneLine(p.text, width)}
+                  {p.requestId ? '' : <Text dimColor size="caption">{'  未加载'}</Text>}
+                </Button>
+              </Box>
+            ))}
+          </Box>
         </Box>
       )
     }
@@ -647,9 +694,78 @@ export const register: Register = on => {
   })
 }
 
-// ── shared pieces of the welcome card and the project tab ──
+// ── drawing pieces: cards, stats, gauges, pills ──
 
 type Elements = Pick<ReturnType<EngineInterface['ui']['resolve']>, 'Box' | 'Text' | 'Button'>
+type Markdown = Extract<ReturnType<EngineInterface['ui']['resolve']>, { Markdown: unknown }>['Markdown']
+
+// Tints of grey that read on a light and a dark page alike.
+const CARD_BG = '#8080800d'
+const CARD_BORDER = '#80808033'
+const HOVER_BG = '#8080801f'
+// The terminal draws no translucent colour: set per draw, it leaves the tints out there.
+let isTinted = true
+const tint = (color: string) => (isTinted ? color : undefined)
+const RING = 76
+// Widths are in character cells on every surface, not pixels: a stat card takes about a quarter of a wide
+// pane and half of a narrow one, a gauge fits its ring, a form field half a wide card.
+const STAT_CELLS = 22
+const GAUGE_CELLS = 12
+const FIELD_CELLS = 26
+
+const ring = (pct: number, color: string, size = RING) => {
+  const stroke = 7
+  const c = size / 2
+  const r = (size - stroke) / 2
+  const len = 2 * Math.PI * r
+  const p = Math.max(0, Math.min(100, pct))
+  const arc =
+    p > 0
+      ? `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round" ` +
+        `stroke-dasharray="${((len * p) / 100).toFixed(2)} ${len.toFixed(2)}" transform="rotate(-90 ${c} ${c})"/>`
+      : ''
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+    `<circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="${TRACK}" stroke-width="${stroke}"/>${arc}` +
+    `<text x="50%" y="50%" text-anchor="middle" dominant-baseline="central" font-family="system-ui,-apple-system,'Segoe UI',sans-serif" ` +
+    `font-size="${Math.round(size * 0.22)}" font-weight="600" fill="${color}">${Math.round(p)}%</text></svg>`
+  )
+}
+
+// A titled card; `extra` sits at the right of its title.
+function card({ Box, Text }: Pick<Elements, 'Box' | 'Text'>, key: string, title: string, children: unknown, extra?: unknown) {
+  return (
+    <Box key={key} flexDirection="column" rowGap="xs" borderStyle="round" borderColor={tint(CARD_BORDER)} backgroundColor={tint(CARD_BG)} paddingX="sm" paddingY="xs">
+      <Box flexDirection="row" alignItems="center">
+        <Text dimColor size="footnote" weight="semibold">{title}</Text>
+        <Box flexGrow={1} />
+        {extra ?? null}
+      </Box>
+      {children}
+    </Box>
+  )
+}
+
+// One figure in a small card: a caption, the value large, a line under it.
+function stat({ Box, Text }: Pick<Elements, 'Box' | 'Text'>, key: string, label: string, value: string, sub: string, color?: string, extra?: unknown) {
+  return (
+    <Box key={key} flexDirection="column" rowGap="xs" flexGrow={1} minWidth={STAT_CELLS} borderStyle="round" borderColor={tint(CARD_BORDER)} backgroundColor={tint(CARD_BG)} paddingX="sm" paddingY="xs">
+      <Text dimColor size="caption">{label}</Text>
+      <Text bold tabular size="title" color={color}>{value}</Text>
+      {extra ?? null}
+      <Text dimColor size="caption">{sub}</Text>
+    </Box>
+  )
+}
+
+// A short tinted label.
+function pill(Text: Elements['Text'], key: string, text: string, color: string, isMono = false) {
+  return (
+    <Text key={key} mono={isMono} size="footnote" weight="medium" color={color} backgroundColor={tint(`${color}22`)}>
+      {` ${text} `}
+    </Text>
+  )
+}
 
 const HOUR_MS = 60 * 60 * 1000
 // The longest waits the picker offers, as /auto-continue on takes them.
@@ -675,7 +791,7 @@ async function scheduleAuto($: EngineInterface, when: string) {
   await runAuto($, message ? `${when} ${message}` : when)
 }
 
-// The usage tab's auto-continue block: what it waits for, and fields that run its command. Absent when it is not installed.
+// The usage tab's auto-continue card: what it waits for, and fields that run its command. Absent when it is not installed.
 async function autoSection($: EngineInterface, ui: ReturnType<EngineInterface['ui']['resolve']>, at: number) {
   const { Box, Text, Button } = ui
   const Input = 'Input' in ui ? ui.Input : undefined
@@ -687,31 +803,50 @@ async function autoSection($: EngineInterface, ui: ReturnType<EngineInterface['u
   const maxWait = await read($, autoMaxWait)
   const message = await read($, autoMessage)
 
-  const status = (
-    <Box key="auto-status" flexDirection="column">
-      {wait ? (
-        <Text color={WARN}>{`⏳ ${wait.kind ? (AUTO_LABELS[wait.kind] ?? wait.kind) : '额度'}用完，${clockTime(wait.wakeAt, at)} 自动继续`}</Text>
-      ) : null}
-      {scheduled ? <Text color={SPEED}>{`⏰ ${clockTime(scheduled.at, at)} 发送「${scheduled.text}」`}</Text> : null}
-    </Box>
-  )
+  const badge = wait
+    ? pill(Text, 'auto-badge', '等待额度刷新', WARN)
+    : scheduled
+      ? pill(Text, 'auto-badge', '已定时', SPEED)
+      : isOn
+        ? pill(Text, 'auto-badge', '已开启', MONEY)
+        : pill(Text, 'auto-badge', '未开启', '#8a8a8a')
+
+  const status =
+    wait || scheduled ? (
+      <Box key="auto-status" flexDirection="column" rowGap="xs" paddingX="sm" paddingY="xs" backgroundColor={tint(`${wait ? WARN : SPEED}14`)} borderStyle="round" borderColor={tint(`${wait ? WARN : SPEED}40`)}>
+        {wait ? (
+          <Text color={WARN}>
+            <Text bold>{`⏳ ${wait.kind ? (AUTO_LABELS[wait.kind] ?? wait.kind) : '额度'}用完`}</Text>
+            {`，${clockTime(wait.wakeAt, at)} 刷新后自动继续`}
+          </Text>
+        ) : null}
+        {scheduled ? (
+          <Box flexDirection="row" alignItems="center" columnGap="sm">
+            <Text color={SPEED}>
+              <Text bold>{`⏰ ${clockTime(scheduled.at, at)}`}</Text>
+              {` 发送「${scheduled.text}」`}
+            </Text>
+            <Box flexGrow={1} />
+            <Button key="auto-cancel" plain label="取消定时" onPress={() => runAuto($, 'cancel')} />
+          </Box>
+        ) : null}
+      </Box>
+    ) : null
 
   // A surface with no fields (the phone) keeps the two buttons.
   if (!Input || !Select) {
-    return (
-      <Box key="auto" flexDirection="column">
-        <Text dimColor size="footnote">自动继续</Text>
-        <Text dimColor={!isOn}>{isOn ? '额度用完后自动继续：开' : '额度用完后自动继续：关'}</Text>
+    return card(
+      { Box, Text },
+      'auto',
+      '自动继续',
+      <Box flexDirection="column" rowGap="xs">
         {status}
-        <Box flexDirection="row" columnGap={1} marginTop={1} flexWrap="wrap">
+        <Box flexDirection="row" columnGap="xs" flexWrap="wrap">
           <Button key="auto-toggle" label={isOn ? '关闭额度自动继续' : '开启额度自动继续'} onPress={() => runAuto($, isOn ? 'off' : 'on')} />
-          {scheduled ? (
-            <Button key="auto-cancel" label="取消定时" onPress={() => runAuto($, 'cancel')} />
-          ) : (
-            <Button key="auto-in-1h" label="1 小时后继续" onPress={() => runAuto($, 'in 1h')} />
-          )}
+          {scheduled ? null : <Button key="auto-in-1h" label="1 小时后继续" onPress={() => runAuto($, 'in 1h')} />}
         </Box>
-      </Box>
+      </Box>,
+      badge,
     )
   }
 
@@ -724,120 +859,193 @@ async function autoSection($: EngineInterface, ui: ReturnType<EngineInterface['u
   ]
   const waitValue = !isOn ? 'off' : known ? known.value : maxWait !== null ? 'current' : '1d'
 
-  return (
-    <Box key="auto" flexDirection="column" rowGap={1}>
-      <Text dimColor size="footnote">自动继续</Text>
+  const field = (key: string, title: string, hint: string, control: unknown) => (
+    <Box key={key} flexDirection="column" rowGap="xs" flexGrow={1} minWidth={FIELD_CELLS}>
+      <Text weight="semibold" size="footnote">{title}</Text>
+      {control}
+      <Text dimColor size="caption">{hint}</Text>
+    </Box>
+  )
+
+  return card(
+    { Box, Text },
+    'auto',
+    '自动继续',
+    <Box flexDirection="column" rowGap="sm">
       {status}
-      <Select
-        key="auto-wait"
-        label="额度用完后自动继续"
-        options={waitOptions}
-        value={waitValue}
-        onSelect={value => (value === 'current' ? undefined : runAuto($, value === 'off' ? 'off' : `on ${value}`))}
-      />
-      <Input
-        key="auto-message"
-        label="定时发送的内容"
-        placeholder="留空发送 continue"
-        value={message}
-        onInput={value => update($, autoMessage, () => value)}
-        onSubmit={value => update($, autoMessage, () => value)}
-      />
-      <Box flexDirection="row" columnGap={1} flexWrap="wrap" alignItems="flex-end">
-        <Select
-          key="auto-when"
-          label="定时继续"
-          options={[{ value: 'none', label: '选一个时间…' }, ...WHENS]}
-          value="none"
-          onSelect={value => (value === 'none' ? undefined : scheduleAuto($, value))}
-        />
-        <Input
-          key="auto-at"
-          label="或指定时间"
-          placeholder="14:30、10/22 09:00 或 2h"
-          submitLabel="定时"
-          onSubmit={value => {
-            const when = value.trim()
-            if (!when) return $.ui.toast('先填一个时间：14:30、10/22 09:00 或 2h')
-            return scheduleAuto($, `${isSpan(when) ? 'in' : 'at'} ${when}`)
-          }}
-        />
-        {scheduled ? <Button key="auto-cancel" label="取消定时" onPress={() => runAuto($, 'cancel')} /> : null}
+      <Box flexDirection="row" columnGap="md" rowGap="sm" flexWrap="wrap">
+        {field(
+          'auto-wait-field',
+          '额度用完后',
+          '刷新时间在这个范围内，就自动发消息继续',
+          <Select key="auto-wait" options={waitOptions} value={waitValue} onSelect={value => (value === 'current' ? undefined : runAuto($, value === 'off' ? 'off' : `on ${value}`))} />,
+        )}
+        {field(
+          'auto-when-field',
+          '定时继续',
+          '到点发送下面的内容',
+          <Select
+            key="auto-when"
+            options={[{ value: 'none', label: '选一个时间…' }, ...WHENS]}
+            value="none"
+            onSelect={value => (value === 'none' ? undefined : scheduleAuto($, value))}
+          />,
+        )}
       </Box>
+      <Box flexDirection="row" columnGap="md" rowGap="sm" flexWrap="wrap">
+        {field(
+          'auto-at-field',
+          '或指定时间',
+          '14:30、10/22 09:00，或 2h、90m',
+          <Input
+            key="auto-at"
+            placeholder="14:30"
+            submitLabel="定时"
+            onSubmit={value => {
+              const when = value.trim()
+              if (!when) return $.ui.toast('先填一个时间：14:30、10/22 09:00 或 2h')
+              return scheduleAuto($, `${isSpan(when) ? 'in' : 'at'} ${when}`)
+            }}
+          />,
+        )}
+        {field(
+          'auto-message-field',
+          '定时发送的内容',
+          '留空发送 continue',
+          <Input
+            key="auto-message"
+            placeholder="continue"
+            value={message}
+            onInput={value => update($, autoMessage, () => value)}
+            onSubmit={value => update($, autoMessage, () => value)}
+          />,
+        )}
+      </Box>
+    </Box>,
+    badge,
+  )
+}
+
+// The branch and its state, as pills.
+function gitLine({ Box, Text }: Pick<Elements, 'Box' | 'Text'>, git: CockpitGit | null) {
+  if (!git) return <Text dimColor>不是 git 仓库</Text>
+  return (
+    <Box flexDirection="row" columnGap="xs" flexWrap="wrap" alignItems="center">
+      {pill(Text, 'branch', `⎇ ${git.branch}`, ACCENT, true)}
+      {git.changes > 0 ? pill(Text, 'changes', `${git.changes} 个未提交改动`, WARN) : pill(Text, 'changes', '工作区干净', MONEY)}
+      {git.ahead ? pill(Text, 'ahead', `↑${git.ahead} 未推送`, MONEY) : null}
+      {git.behind ? pill(Text, 'behind', `↓${git.behind} 未拉取`, ALERT) : null}
     </Box>
   )
 }
 
-function gitLine(Text: Elements['Text'], git: CockpitGit | null) {
-  if (!git) return <Text dimColor>不是 git 仓库</Text>
-  return (
-    <Text>
-      ⎇ {git.branch}
-      {git.changes > 0 ? <Text color={WARN}>{`  ${git.changes} 个未提交改动`}</Text> : <Text dimColor>  工作区干净</Text>}
-      {git.ahead ? <Text color={MONEY}>{`  ↑${git.ahead}`}</Text> : null}
-      {git.behind ? <Text color={ALERT}>{`  ↓${git.behind}`}</Text> : null}
-    </Text>
-  )
-}
-
-function projectBody($: EngineInterface, { Box, Text, Button }: Elements, found: CockpitProject, shownDoc: string | null, width: number) {
+// Commits, docs, the last session and the recent ones: cards in the project tab, plain sections in the welcome card.
+function projectBody(
+  $: EngineInterface,
+  { Box, Text, Button }: Elements,
+  found: CockpitProject,
+  shownDoc: string | null,
+  width: number,
+  isCompact = false,
+  Markdown?: Markdown,
+) {
   const at = found.scannedAt
   const git = found.git
   const latest = found.sessions[0]
+  const section = (key: string, title: string, children: unknown) =>
+    isCompact ? (
+      <Box key={key} flexDirection="column" marginTop="sm" rowGap="xs">
+        <Text dimColor size="footnote" weight="semibold">{title}</Text>
+        {children}
+      </Box>
+    ) : (
+      card({ Box, Text }, key, title, children)
+    )
+
   return (
-    <Box flexDirection="column">
-      {git && git.commits.length > 0 ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>最近提交</Text>
-          {git.commits.map(c => (
-            <Text key={c.hash}>
-              <Text mono color={WARN}>{c.hash}</Text> {cut(c.subject, width)} <Text dimColor>{ago(c.time, at)}</Text>
-            </Text>
-          ))}
-        </Box>
-      ) : null}
-      {found.docs.length > 0 ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>项目文档 · 点一下展开</Text>
-          {found.docs.map(d => (
-            <Box key={d.name} flexDirection="column">
-              <Button key={`doc-${d.name}`} plain onPress={() => update($, openDoc, open => (open === d.name ? null : d.name))}>
-                <Text color={ACCENT}>{shownDoc === d.name ? '▾ ' : '▸ '}{d.name}</Text>{' '}
-                {cut([d.title, d.gist].filter(Boolean).join(' — '), width)}
-                <Text dimColor>{` · ${d.lines}行`}</Text>
-              </Button>
-              {shownDoc === d.name ? (
-                <Box flexDirection="column" paddingLeft={2}>
-                  {d.preview.map((line, i) => (
-                    <Text key={`${d.name}-${i}`} dimColor wrap="truncate-end">{line}</Text>
-                  ))}
+    <Box flexDirection="column" rowGap={isCompact ? 0 : 'sm'}>
+      {git && git.commits.length > 0
+        ? section(
+            'commits',
+            '最近提交',
+            <Box flexDirection="column" rowGap="xs">
+              {git.commits.map(c => (
+                <Box key={c.hash} flexDirection="row" columnGap="sm" alignItems="center">
+                  {pill(Text, `hash-${c.hash}`, c.hash, WARN, true)}
+                  <Box flexGrow={1} flexShrink={1}>
+                    <Text wrap="truncate-end">{cut(c.subject, width)}</Text>
+                  </Box>
+                  <Text dimColor size="caption">{ago(c.time, at)}</Text>
+                </Box>
+              ))}
+            </Box>,
+          )
+        : null}
+      {found.docs.length > 0
+        ? section(
+            'docs',
+            '项目文档 · 点一下展开',
+            <Box flexDirection="column">
+              {found.docs.map(d => (
+                <Box key={d.name} flexDirection="column">
+                  <Box flexDirection="row" paddingX="xs" hover={isTinted ? { backgroundColor: HOVER_BG } : undefined}>
+                    <Button key={`doc-${d.name}`} plain onPress={() => update($, openDoc, open => (open === d.name ? null : d.name))}>
+                      <Text color={ACCENT} weight="semibold">{`${shownDoc === d.name ? '▾' : '▸'} ${d.name}`}</Text>
+                      {'  '}
+                      {cut([d.title, d.gist].filter(Boolean).join(' — '), width)}
+                      <Text dimColor size="caption">{`  ${d.lines} 行`}</Text>
+                    </Button>
+                  </Box>
+                  {shownDoc === d.name ? (
+                    <Box flexDirection="column" marginLeft="sm" paddingX="sm" paddingY="xs" borderStyle="round" borderColor={tint(CARD_BORDER)}>
+                      {Markdown ? (
+                        <Markdown key={`md-${d.name}`} text={d.preview.join('\n')} />
+                      ) : (
+                        d.preview.map((line, i) => (
+                          <Text key={`${d.name}-${i}`} dimColor wrap="truncate-end">{line}</Text>
+                        ))
+                      )}
+                    </Box>
+                  ) : null}
+                </Box>
+              ))}
+            </Box>,
+          )
+        : null}
+      {latest && (latest.recap || (latest.edited?.length ?? 0) > 0)
+        ? section(
+            'last',
+            `上次会话做了什么 · ${ago(latest.time, at)}`,
+            <Box flexDirection="column" rowGap="xs">
+              {latest.recap ? <Text>{latest.recap}</Text> : null}
+              {latest.edited && latest.edited.length > 0 ? (
+                <Box flexDirection="row" columnGap="xs" rowGap="xs" flexWrap="wrap" alignItems="center">
+                  <Text dimColor size="footnote">改动文件</Text>
+                  {latest.edited.slice(0, EDITED_SHOWN).map(path => pill(Text, `edited-${path}`, path, '#8a8a8a', true))}
+                  {latest.edited.length > EDITED_SHOWN ? <Text dimColor size="caption">{`等 ${latest.edited.length} 个`}</Text> : null}
                 </Box>
               ) : null}
-            </Box>
-          ))}
-        </Box>
-      ) : null}
-      {latest && (latest.recap || (latest.edited?.length ?? 0) > 0) ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text dimColor>{`上次会话做了什么 · ${ago(latest.time, at)}`}</Text>
-          {latest.recap ? <Text>{latest.recap}</Text> : null}
-          {latest.edited && latest.edited.length > 0 ? (
-            <Text>
-              <Text dimColor>改动文件 </Text>
-              {latest.edited.slice(0, EDITED_SHOWN).join('、')}
-              {latest.edited.length > EDITED_SHOWN ? <Text dimColor>{` 等${latest.edited.length}个`}</Text> : null}
-            </Text>
-          ) : null}
-        </Box>
-      ) : null}
-      <Box flexDirection="column" marginTop={1}>
-        <Text dimColor>{found.sessions.length > 0 ? '最近会话 · 在左侧会话列表里打开' : '这个项目还没有别的会话'}</Text>
-        {found.sessions.map(s => (
-          <Text key={s.id}>
-            {cut(s.prompt, width)} <Text dimColor>{`· ${s.prompts}条 · ${ago(s.time, at)}`}</Text>
-          </Text>
-        ))}
-      </Box>
+            </Box>,
+          )
+        : null}
+      {section(
+        'sessions',
+        found.sessions.length > 0 ? '最近会话 · 在左侧会话列表里打开' : '最近会话',
+        found.sessions.length > 0 ? (
+          <Box flexDirection="column" rowGap="xs">
+            {found.sessions.map(s => (
+              <Box key={s.id} flexDirection="row" columnGap="sm" alignItems="center">
+                <Box flexGrow={1} flexShrink={1}>
+                  <Text wrap="truncate-end">{cut(s.prompt, width)}</Text>
+                </Box>
+                <Text dimColor size="caption">{`${s.prompts} 条 · ${ago(s.time, at)}`}</Text>
+              </Box>
+            ))}
+          </Box>
+        ) : (
+          <Text dimColor>这个项目还没有别的会话</Text>
+        ),
+      )}
     </Box>
   )
 }
